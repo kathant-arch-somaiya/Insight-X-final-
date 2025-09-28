@@ -7,7 +7,13 @@ const nodemailer = require('nodemailer');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// ✅ CORS setup to allow your frontend domain
+app.use(cors({
+    origin: "https://ac-insight-x.vercel.app", 
+    methods: ["GET", "POST"],
+    credentials: true
+}));
+
 app.use(express.json());
 
 // MongoDB connection
