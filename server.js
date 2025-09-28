@@ -53,9 +53,49 @@ app.post('/api/register', async (req, res) => {
     console.log("POST /api/register triggered");
     console.log("Request body:", req.body);
 
-    res.status(200).json({ message: "Route reached successfully" });
-});
+    try {
+        const { fullName, email, contactNumber, currentYear, branch, purpose } = req.body;
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+        // Validation
+        if (!fullName || !email || !contactNumber || !currentYear || !branch) {
+            return res.status(400).json({ message: "Please fill out all required fields." });
+        }
+
+        // Check for existing registration
+        const existingRegistration = await Registration.findOne({ $or: [{ email }, { contactNumber }] });
+        if (existingRegistration) {
+            return res.status(409).json({ message: "This email or contact number has already been registered." });
+        }
+
+        // Save to MongoDB
+        const newRegistration = new Registration({ fullName, email, contactNumber, currentYear, branch, purpose });
+        await newRegistration.save();
+        console.log("Registration saved successfully");
+
+        // Send confirmation email
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: "Registration Confirmed for Insight X!",
+            html: `
+                <h1>Welcome to Insight X, ${fullName}!</h1>
+                <p>Thank you for registering. We're thrilled to have you join us!</p>
+                <p><b>Event:</b> Insight X - Campus to Corporate</p>
+                <p><b>Date:</b> October 13th, 2025</p>
+                <p>We can't wait to see you there!</p>
+                <br>
+                <p>Alumni Cell KJSSE</p>
+            `
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) console.error("Email error:", error);
+            else console.log("Email sent successfully:", info.response);
+        });
+
+        res.status(201).json({ message: "Registration successful! A confirmation email has been sent." });
+    } catch (error) {
+        console.error("Registration Error:", error);
+        res.status(500).json({ message: "An unexpected error occurred. Please try again later." });
+    }
 });
