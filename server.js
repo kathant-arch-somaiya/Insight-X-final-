@@ -14,7 +14,6 @@ const PORT = process.env.PORT || 5000;
 // --- Middleware Setup ---
 
 // 1. CORS (Cross-Origin Resource Sharing)
-// This securely allows your Vercel frontend to communicate with this backend.
 app.use(cors({
     origin: "https://ac-insight-x.vercel.app", 
     methods: ["GET", "POST"],
@@ -22,30 +21,31 @@ app.use(cors({
 }));
 
 // 2. JSON Body Parser
-// This allows the server to read JSON data sent from the frontend.
 app.use(express.json());
 
 // --- Database Connection ---
 
-// Connect to MongoDB using the connection string from your environment variables
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log("MongoDB connected successfully!"))
     .catch(err => console.error("MongoDB connection error:", err));
 
 // --- Email Transporter Setup ---
 
-// Create a reusable transporter object for sending emails with Nodemailer
+// **UPDATED CODE**
+// This is the new, more explicit transporter configuration.
+// It's more reliable on hosting platforms like Render and can help bypass firewall issues.
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: "smtp.gmail.com",
+    port: 465, // Standard port for SMTP over SSL
+    secure: true, // Use SSL
     auth: {
-        user: process.env.EMAIL_USER, // Your full Gmail address
-        pass: process.env.EMAIL_PASS, // The 16-character Google App Password
+        user: process.env.EMAIL_USER, // Your full Gmail address from Render's env
+        pass: process.env.EMAIL_PASS, // Your 16-character Google App Password from Render's env
     },
 });
 
 // --- Database Schema and Model ---
 
-// Define the structure for the registration data
 const registrationSchema = new mongoose.Schema({
     fullName: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -56,12 +56,11 @@ const registrationSchema = new mongoose.Schema({
     registeredAt: { type: Date, default: Date.now },
 });
 
-// Create a model from the schema to interact with the 'registrations' collection
 const Registration = mongoose.model('Registration', registrationSchema);
 
 // --- API Routes ---
 
-// Health check route to confirm the server is running
+// Health check route
 app.get("/", (req, res) => {
     res.send("Insight-X Backend is running and ready!");
 });
@@ -74,25 +73,25 @@ app.post('/api/register', async (req, res) => {
     try {
         const { fullName, email, contactNumber, currentYear, branch, purpose } = req.body;
 
-        // --- 1. Validation ---
+        // 1. Validation
         if (!fullName || !email || !contactNumber || !currentYear || !branch) {
             console.log("Validation failed: A required field is missing.");
             return res.status(400).json({ message: "Please fill out all required fields." });
         }
 
-        // --- 2. Check for Duplicates ---
+        // 2. Check for Duplicates
         const existingRegistration = await Registration.findOne({ $or: [{ email }, { contactNumber }] });
         if (existingRegistration) {
             console.log("Duplicate registration attempt denied for:", email);
             return res.status(409).json({ message: "This email or contact number has already been registered." });
         }
 
-        // --- 3. Save to Database ---
+        // 3. Save to Database
         const newRegistration = new Registration({ fullName, email, contactNumber, currentYear, branch, purpose });
         await newRegistration.save();
         console.log("Registration saved successfully to database:", newRegistration);
 
-        // --- 4. Send Confirmation Email ---
+        // 4. Send Confirmation Email
         const mailOptions = {
             from: `"Insight X" <${process.env.EMAIL_USER}>`,
             to: email,
@@ -108,14 +107,11 @@ app.post('/api/register', async (req, res) => {
             `
         };
         
-        // **UPDATED CODE**
-        // Using await here ensures we wait for the email to send.
-        // If it fails, it will be caught by the catch block below.
         console.log(`Attempting to send confirmation email to ${email}...`);
         await transporter.sendMail(mailOptions);
         console.log("Email sent successfully!");
 
-        // --- 5. Send Success Response ---
+        // 5. Send Success Response
         res.status(201).json({ message: "Registration successful! A confirmation email has been sent." });
 
     } catch (error) {
