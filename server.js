@@ -56,23 +56,21 @@ app.post('/api/register', async (req, res) => {
     try {
         const { fullName, email, contactNumber, currentYear, branch, purpose } = req.body;
 
-        // Validation
         if (!fullName || !email || !contactNumber || !currentYear || !branch) {
+            console.log("Validation failed");
             return res.status(400).json({ message: "Please fill out all required fields." });
         }
 
-        // Check for existing registration
         const existingRegistration = await Registration.findOne({ $or: [{ email }, { contactNumber }] });
         if (existingRegistration) {
+            console.log("Duplicate registration found");
             return res.status(409).json({ message: "This email or contact number has already been registered." });
         }
 
-        // Save to MongoDB
         const newRegistration = new Registration({ fullName, email, contactNumber, currentYear, branch, purpose });
         await newRegistration.save();
-        console.log("Registration saved successfully");
+        console.log("Registration saved successfully:", newRegistration);
 
-        // Send confirmation email
         const mailOptions = {
             from: process.env.EMAIL_USER,
             to: email,
@@ -89,7 +87,7 @@ app.post('/api/register', async (req, res) => {
         };
 
         transporter.sendMail(mailOptions, (error, info) => {
-            if (error) console.error("Email error:", error);
+            if (error) console.error("Email sending failed:", error);
             else console.log("Email sent successfully:", info.response);
         });
 
