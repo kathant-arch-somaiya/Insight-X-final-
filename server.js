@@ -1,36 +1,51 @@
+// Load environment variables from a .env file
 require('dotenv').config();
+
+// Import necessary packages
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 
+// Initialize the Express app
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ✅ CORS setup to allow your frontend domain
+// --- Middleware Setup ---
+
+// 1. CORS (Cross-Origin Resource Sharing)
+// This securely allows your Vercel frontend to communicate with this backend.
 app.use(cors({
     origin: "https://ac-insight-x.vercel.app", 
     methods: ["GET", "POST"],
     credentials: true
 }));
 
+// 2. JSON Body Parser
+// This allows the server to read JSON data sent from the frontend.
 app.use(express.json());
 
-// MongoDB connection
+// --- Database Connection ---
+
+// Connect to MongoDB using the connection string from your environment variables
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log("MongoDB connected successfully!"))
     .catch(err => console.error("MongoDB connection error:", err));
 
-// Nodemailer transporter
+// --- Email Transporter Setup ---
+
+// Create a reusable transporter object for sending emails with Nodemailer
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        user: process.env.EMAIL_USER, // Your full Gmail address
+        pass: process.env.EMAIL_PASS, // The 16-character Google App Password
     },
 });
 
-// MongoDB schema & model
+// --- Database Schema and Model ---
+
+// Define the structure for the registration data
 const registrationSchema = new mongoose.Schema({
     fullName: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -41,59 +56,77 @@ const registrationSchema = new mongoose.Schema({
     registeredAt: { type: Date, default: Date.now },
 });
 
+// Create a model from the schema to interact with the 'registrations' collection
 const Registration = mongoose.model('Registration', registrationSchema);
 
-// Debug route to confirm backend is running
+// --- API Routes ---
+
+// Health check route to confirm the server is running
 app.get("/", (req, res) => {
-    res.send("Backend is running");
+    res.send("Insight-X Backend is running and ready!");
 });
 
-// Debug POST route to confirm /api/register connection
+// Main registration route
 app.post('/api/register', async (req, res) => {
-    console.log("POST /api/register triggered");
-    console.log("Request body:", req.body);
+    console.log("POST /api/register endpoint hit");
+    console.log("Received data:", req.body);
 
     try {
         const { fullName, email, contactNumber, currentYear, branch, purpose } = req.body;
 
+        // --- 1. Validation ---
         if (!fullName || !email || !contactNumber || !currentYear || !branch) {
-            console.log("Validation failed");
+            console.log("Validation failed: A required field is missing.");
             return res.status(400).json({ message: "Please fill out all required fields." });
         }
 
+        // --- 2. Check for Duplicates ---
         const existingRegistration = await Registration.findOne({ $or: [{ email }, { contactNumber }] });
         if (existingRegistration) {
-            console.log("Duplicate registration found");
+            console.log("Duplicate registration attempt denied for:", email);
             return res.status(409).json({ message: "This email or contact number has already been registered." });
         }
 
+        // --- 3. Save to Database ---
         const newRegistration = new Registration({ fullName, email, contactNumber, currentYear, branch, purpose });
         await newRegistration.save();
-        console.log("Registration saved successfully:", newRegistration);
+        console.log("Registration saved successfully to database:", newRegistration);
 
+        // --- 4. Send Confirmation Email ---
         const mailOptions = {
-            from: process.env.EMAIL_USER,
+            from: `"Insight X" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: "Registration Confirmed for Insight X!",
             html: `
                 <h1>Welcome to Insight X, ${fullName}!</h1>
-                <p>Thank you for registering. We're thrilled to have you join us!</p>
-                <p><b>Event:</b> Insight X - Campus to Corporate</p>
-                <p><b>Date:</b> October 13th, 2025</p>
+                <p>Thank you for registering. We're thrilled to have you join us for our Campus to Corporate event.</p>
+                <p><b>Event Date:</b> October 13th, 2025</p>
                 <p>We can't wait to see you there!</p>
                 <br>
-                <p>Alumni Cell KJSSE</p>
+                <p>Best regards,</p>
+                <p><b>Alumni Cell KJSSE</b></p>
             `
         };
+        
+        // **UPDATED CODE**
+        // Using await here ensures we wait for the email to send.
+        // If it fails, it will be caught by the catch block below.
+        console.log(`Attempting to send confirmation email to ${email}...`);
+        await transporter.sendMail(mailOptions);
+        console.log("Email sent successfully!");
 
-        transporter.sendMail(mailOptions, (error, info) => {
-            if (error) console.error("Email sending failed:", error);
-            else console.log("Email sent successfully:", info.response);
-        });
-
+        // --- 5. Send Success Response ---
         res.status(201).json({ message: "Registration successful! A confirmation email has been sent." });
+
     } catch (error) {
-        console.error("Registration Error:", error);
-        res.status(500).json({ message: "An unexpected error occurred. Please try again later." });
+        // --- Error Handling ---
+        console.error("An error occurred during the registration process:", error);
+        res.status(500).json({ message: "An unexpected server error occurred. Please try again later." });
     }
+});
+
+// --- Start the Server ---
+
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
